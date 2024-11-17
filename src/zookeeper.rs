@@ -53,6 +53,7 @@ impl Zookeeper{
         let handle2 = task::spawn(Node::listen2(server2.clone()));
 
         // task::spawn(Node::listen2(server.clone())).await;
+        // task::spawn(Node::listen2(server.clone())).await;
 
         loop{
             // print!("> ");
