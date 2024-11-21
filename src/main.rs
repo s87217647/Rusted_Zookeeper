@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use std::cell::RefCell;
 use std::io;
 use std::io::Write;
@@ -8,7 +10,6 @@ use tokio::task::spawn;
 use tokio::time::sleep;
 use tokio::sync::broadcast;
 use tokio::task::id;
-use crate::node::{Node, PeerMessage};
 use crate::zookeeper::{Zookeeper};
 // mod Zookeeper;
 mod node;
@@ -19,7 +20,7 @@ async fn main() {
     // multi server is working, now, have a new message channel
     // mpsc - multi sending, single consume
     // get a zk running, let's send some msg ;
-    let mut zk = Zookeeper::new(5);
+    let mut zk = Zookeeper::new(2);
     zk.run().await;
     // let n = Node::new(1, zk.sender.clone(), zk.sender.subscribe());
     // task::spawn(n.listen());
