@@ -20,7 +20,7 @@ async fn main() {
     // multi server is working, now, have a new message channel
     // mpsc - multi sending, single consume
     // get a zk running, let's send some msg ;
-    let mut zk = Zookeeper::new(2);
+    let mut zk = Zookeeper::new(10);
     zk.run().await;
     // let n = Node::new(1, zk.sender.clone(), zk.sender.subscribe());
     // task::spawn(n.listen());

@@ -57,12 +57,12 @@ impl Zookeeper {
     pub fn new(size: i32) -> Zookeeper {
 
         let mut servers = HashMap::new();
-        let(sender, receiver) = broadcast::channel((2 * size + 1) as usize);
+        let(sender, receiver) = broadcast::channel((size * size) as usize);
 
 
         for i in 0..size {
-
-            let mut unique_id = random::<i32>();
+            // let mut unique_id = random::<i32>();
+            let mut unique_id = i;
             while servers.contains_key(&unique_id) {unique_id = random::<i32>();}
 
             let node = Node::new(unique_id, sender.clone(), sender.subscribe(),size);
