@@ -1,25 +1,13 @@
-use alloc::fmt::format;
-use std::alloc::System;
-use std::arch::is_aarch64_feature_detected;
-use std::process::id;
-use std::cell::{Ref, RefCell};
+
 use std::collections::HashSet;
-use std::f32::consts::LOG2_10;
-use std::hint::spin_loop;
 use std::io::{self, Write};
-use std::net::UdpSocket;
-use std::ops::Add;
-use std::rc::{Rc, Weak};
-use std::sync::{mpsc, Arc, MutexGuard};
-use std::sync::mpsc::Receiver;
+use std::sync::{Arc};
 use std::time::Duration;
-use rand::{random, Rng};
+use rand::{Rng};
 use tokio::time::{sleep, Instant};
 use tokio::sync::{broadcast, Mutex};
 use tokio::task;
-use tokio::sync::broadcast::Sender;
-use crate::node::MessageType::{AckTX, Running, SyncRequest};
-use crate::node::NodeStatus::Following;
+
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NodeStatus {
@@ -35,10 +23,9 @@ pub(crate) struct Node{
     pub receiver: broadcast::Receiver<Message>,
     pub leader_id: core::option::Option<i32>,
     pub epoch: i32,
-    pub msg_buffer: Vec<Message>,
     pub history: Vec<Transaction>, //aka history
     pub cluster_size: i32,
-    pub last_alive_from_leader: Instant,
+    pub last_heartbeat: Instant,
     pub supporting_nodes : HashSet<i32>,
     // don't need a map to represent data, coz, technically, having
 }
@@ -100,8 +87,8 @@ impl Message {
 impl Node{
     pub fn new(id: i32, sender: broadcast::Sender<Message>, receiver: broadcast::Receiver<Message>, cluster_size:i32) -> Node{
         Node{id, leader_id: None, status: NodeStatus::Following, sender, receiver,
-            epoch:0, msg_buffer: Vec::new(), history: Vec::new(),
-            cluster_size, last_alive_from_leader: Instant::now(), supporting_nodes: HashSet::new()}
+            epoch:0, history: Vec::new(),
+            cluster_size, last_heartbeat: Instant::now(), supporting_nodes: HashSet::new()}
     }
 
 
@@ -110,19 +97,6 @@ impl Node{
         sleep(Duration::from_millis(random_delay)).await;
 
         node.sender.send(msg).unwrap();
-    }
-
-
-    async fn listen(node: Arc<Mutex<Node>>){
-        loop{
-            sleep(Duration::from_millis(100)).await;
-            let mut n = node.lock().await;
-            while !n.receiver.is_empty(){
-                let Ok(msg) = n.receiver.recv().await else{ panic!("Error receiving message")};
-                // println!("Node {} received msg: {}", n.id, &msg);
-                n.msg_buffer.push(msg);
-            }
-        }
     }
 
     fn last_zxid(n: &Node) -> i32{
@@ -139,8 +113,8 @@ impl Node{
     async fn follow_and_discovery(n: &mut Node, msg: &Message){
         // This is where discovery begin, establish new connection
         n.leader_id = Some(msg.sender_id);
-        n.last_alive_from_leader = Instant::now();
-        n.status = Following;
+        n.last_heartbeat = Instant::now();
+        n.status = NodeStatus::Following;
         n.epoch = msg.epoch;
         // Broadcast all it's history
         for tx in n.history.iter(){
@@ -158,14 +132,14 @@ impl Node{
 
     }
 
-    async fn give_up_election(n: &mut Node, msg: &Message){
+    async fn give_up_election(n: &mut Node){
         println!("{} give up election", n.id);
         // Node::node_report(n);
         // msg.message_report();
 
-        n.status = Following;
+        n.status = NodeStatus::Following;
         n.leader_id = None;
-        n.last_alive_from_leader = Instant::now();
+        n.last_heartbeat = Instant::now();
         n.supporting_nodes = HashSet::new();
     }
 
@@ -183,8 +157,6 @@ impl Node{
             report = format!("id: {}, status: {:?}, leader: {} epoch {}, ", n.id, n.status, n.leader_id.unwrap(), n.epoch);
         }
 
-
-        let transactions = String::new();
 
         for i in 0..n.history.len(){
             let tx = &n.history[i];
@@ -212,7 +184,7 @@ impl Node{
 
                 match msg.msg_type {
                     MessageType:: Commit =>{
-                        if n.status == Following || n.leader_id != None {continue}
+                        if n.status == NodeStatus::Following || n.leader_id != None {continue}
 
                         if n.leader_id.unwrap() == msg.sender_id && msg.epoch == n.epoch && msg.last_zxid == Node::last_zxid(&n){
                             Node::execute_tx(&mut n).await;
@@ -251,10 +223,10 @@ impl Node{
                             new_write.epoch = n.epoch;
                             Node::broadcast(&n, new_write).await;
                         }
-                        if n.status == Following && n.leader_id != None && n.leader_id.unwrap() == msg.sender_id{
+                        if n.status == NodeStatus::Following && n.leader_id != None && n.leader_id.unwrap() == msg.sender_id{
                             n.history.push(msg.tx);
 
-                            let mut ack = Message:: new(n.id, AckTX);
+                            let mut ack = Message:: new(n.id, MessageType::AckTX);
                             ack.receiver_id = n.leader_id.unwrap();
                             ack.last_zxid = Node::last_zxid(&n);
                             ack.epoch = msg.epoch;
@@ -317,14 +289,14 @@ impl Node{
                                 }
 
                                 if n.leader_id != None && n.leader_id.unwrap() == msg.sender_id{
-                                    n.last_alive_from_leader = Instant::now();
+                                    n.last_heartbeat = Instant::now();
                                     n.epoch = msg.epoch;
                                 }
                             }
 
                             NodeStatus::Running =>{
                                 if Node::sender_is_better_leader(&n, &msg) {
-                                    Node::give_up_election(&mut n, &msg).await;
+                                    Node::give_up_election(&mut n).await;
                                 }
                             }
 
@@ -332,16 +304,16 @@ impl Node{
 
                             NodeStatus::Leading =>{
                                 if Node::sender_is_better_leader(&n, &msg){
-                                    Node::give_up_election(&mut n, &msg).await;
+                                    Node::give_up_election(&mut n).await;
                                     Node::follow_and_discovery(&mut n, &msg).await;
                                 }else{
                                     Node::starts_running(&mut n).await;
                                 }
                             }
 
-                            _ =>{
-                                println!("Default case")
-                            }
+                            // _ =>{
+                            //     println!("Default case")
+                            // }
 
                         }
                     }
@@ -382,7 +354,7 @@ impl Node{
                         if n.status != NodeStatus::Running{continue}
 
                         if Node::sender_is_better_leader(&n, &msg){
-                            Node::give_up_election(&mut n, &msg).await;
+                            Node::give_up_election(&mut n).await;
                         }else{
                             //adjust epoch, ready for next campaign
                             n.epoch = msg.epoch;
@@ -457,7 +429,7 @@ impl Node{
         loop{
             sleep(Duration::from_secs(1)).await;
             let mut n = node.lock().await;
-            if n.status == NodeStatus::Following && n.last_alive_from_leader.elapsed() > Duration::from_secs(5){
+            if n.status == NodeStatus::Following && n.last_heartbeat.elapsed() > Duration::from_secs(5){
                 Node::starts_running(&mut n).await;
             }
 
