@@ -1,12 +1,15 @@
 use std::cell::RefCell;
-use crate::node::{Node, Message};
+use crate::node::{Node, Message, MessageType, Transaction, TxActions, NodeStatus};
 use std::collections::HashMap;
 use std::io;
 use std::io::Write;
 use std::rc::Rc;
 use std::sync::{mpsc, Arc};
 use std::sync::mpsc::Receiver;
+use std::time::Duration;
 use rand::random;
+use tokio::time::{sleep};
+
 use tokio::task;
 use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
@@ -31,9 +34,27 @@ impl Zookeeper{
             handlers.push(handler);
         }
 
+        let mut latest_leader = -5; // not -1
+
         loop{
+            while !self.receiver.is_empty(){
+                let msg = self.receiver.recv().await.unwrap();
+                if msg.msg_type == MessageType::Heartbeat{
+                    latest_leader = msg.sender_id;
+                }
+            }
+
             // loop for human interaction
-            print!("> ");
+            println!("\n\
+            *************\n\
+            enter user input\n\
+            -d, [Key] for delete;\n\
+            -n, [Key], [Val] for new Value\n\
+            -c to crash the leader\n\
+            -r to report on all nodes\n\
+            ******************\n\
+            ");
+
             io::stdout().flush().unwrap(); // Ensure prompt is shown immediately
 
             // Read input from stdin
@@ -42,7 +63,59 @@ impl Zookeeper{
 
             // Trim the input to remove any extra whitespace
             let input = input.trim();
-            println!("Sending: {}", input);
+            let parts = input.split(" ").collect::<Vec<&str>>();
+
+            match parts[0]{
+                "-n" =>{
+                    // e.g. -n new_key new_val
+                    let mut tx = Transaction::new();
+                    tx.action = TxActions::New;
+                    tx.key = parts[1].to_string();
+                    tx.val = parts[2].to_string();
+
+                    let mut update = Message::new(-2, MessageType::Write);
+                    update.receiver_id = latest_leader;
+                    update.tx = tx;
+
+                    self.sender.send(update).unwrap();
+                }
+
+                "-c" =>{
+                    //to do, how to
+
+                    let mut leader = self.servers[&latest_leader].lock().await;
+                    leader.status = NodeStatus::Following;
+
+                    while !leader.history.is_empty() {
+                        leader.history.pop();
+                    }
+                    Node::node_report(&leader);
+
+                    sleep(Duration::from_secs(20)).await;
+
+
+                }
+
+
+                "-r" =>{
+                    // first acquire all the locks so it can report at once
+                    let mut locks = Vec::new();
+
+                    for (k, v) in self.servers.iter(){
+                        locks.push(v.lock().await);
+                    }
+
+                    for n in locks.iter(){
+                        Node::node_report( &n);
+                    }
+
+                }
+
+
+                _ =>{
+                    println!("invalid command")
+                }
+            }
 
 
         }
@@ -55,9 +128,8 @@ impl Zookeeper{
 
 impl Zookeeper {
     pub fn new(size: i32) -> Zookeeper {
-
         let mut servers = HashMap::new();
-        let(sender, receiver) = broadcast::channel((size * size) as usize);
+        let(sender, receiver) = broadcast::channel((size * size * size) as usize);
 
 
         for i in 0..size {
