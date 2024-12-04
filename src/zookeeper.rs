@@ -52,7 +52,7 @@ impl Zookeeper {
         while !leader.history.is_empty() {
             leader.history.pop();
         }
-        Node::node_report(&leader);
+        // Node::node_report(&leader);
 
         sleep(Duration::from_secs(20)).await;
     }

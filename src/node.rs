@@ -165,15 +165,15 @@ impl Node {
     pub fn node_report(n: &Node) {
         let mut report;
         if n.leader_id == None {
-            report = format!("id: {}, status: {:?}, leader: None epoch {}, ", n.id, n.status, n.epoch);
+            report = format!("id: {}, status: {:?}, leader: None epoch {} ", n.id, n.status, n.epoch);
         } else {
-            report = format!("id: {}, status: {:?}, leader: {} epoch {}, ", n.id, n.status, n.leader_id.unwrap(), n.epoch);
+            report = format!("id: {}, status: {:?}, leader: {} epoch {} ", n.id, n.status, n.leader_id.unwrap(), n.epoch);
         }
 
 
         for i in 0..n.history.len() {
             let tx = &n.history[i];
-            let tx_report = &format!(" |tx idx: {}, zxid: {}, action: {:?}, key: {}, val: {} |", i, tx.zxid, tx.action, tx.key, tx.val);
+            let tx_report = &format!(" |zxid: {}, action: {:?}, key: {}, val: {} |", tx.zxid, tx.action, tx.key, tx.val);
             report = report + tx_report;
         }
         println!("{}", report.to_string());
