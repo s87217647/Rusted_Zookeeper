@@ -1,4 +1,4 @@
-## Barebone Zookeeper service in Rust.
+## Barebone Zookeeper service in Rust
 
 Barebone as each node stores transactions in history with executing the command. The project focuses on establishing consensus. 
 
