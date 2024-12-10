@@ -14,10 +14,10 @@ After discovery, each node syncs with its leader, getting the holistic data the 
 ### Broadcast
 Users interact with Zookeeper, Zookeeper sends transactions to the leader and the leader broadcasts it to all followers. If the leader does not crash, it stays in the Broadcast phase indefinitely
 
-### Heartbeat monitor and emitter
+### Heartbeat Monitor and Emitter
 When a node is leading, it sends out heartbeats periodically. When a node is following, it resets its heartbeat timer every time it receives a heartbeat message. If the timer ticks, it starts running for an election
 
-### Program interface
+### Program Interface
 -r: reports all node’s status, transaction history
 -n: key val: create a new transaction and send it to the leader
 -c: mimic a leader crash. Hold the leader’s lock for a long time, render it inactive, then, other nodes will start running again
